@@ -40,20 +40,47 @@ void *worker(void *arg) {
 Future *submit_task(void *(*task)(void *), void *arg) {
     // Initialize the future
     Future *future = (Future *)malloc(sizeof(Future));
+    if (future == NULL) {
+        perror("Failed to allocate memory for future");
+        return NULL;
+    }
     future->result = NULL;
     future->is_complete = false;
-    pthread_mutex_init(&future->lock, NULL);
-    pthread_cond_init(&future->cond, NULL);
+    if (pthread_mutex_init(&future->lock, NULL) != 0) {
+        perror("Failed to initialize mutex");
+        free(future);
+        return NULL;
+    }
+    if (pthread_cond_init(&future->cond, NULL) != 0) {
+        perror("Failed to initialize condition variable");
+        pthread_mutex_destroy(&future->lock);
+        free(future);
+        return NULL;
+    }
 
     // Create a task structure
     Task *task_struct = (Task *)malloc(sizeof(Task));
+    if (task_struct == NULL) {
+        perror("Failed to allocate memory for task");
+        pthread_mutex_destroy(&future->lock);
+        pthread_cond_destroy(&future->cond);
+        free(future);
+        return NULL;
+    }
     task_struct->future = future;
     task_struct->task = task;
     task_struct->arg = arg;
 
     // Create a thread to execute the task
     pthread_t thread;
-    pthread_create(&thread, NULL, worker, task_struct);
+    if (pthread_create(&thread, NULL, worker, task_struct) != 0) {
+        perror("Failed to create thread");
+        free(task_struct);
+        pthread_mutex_destroy(&future->lock);
+        pthread_cond_destroy(&future->cond);
+        free(future);
+        return NULL;
+    }
     pthread_detach(thread);
 
     return future;
